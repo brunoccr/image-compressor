@@ -39,17 +39,17 @@ jobs:
             ghcr.io/${{ github.repository }}:${{ github.event.release.tag_name }}
             ghcr.io/${{ github.repository }}:latest
 
-      - name: Update Config on HA-Addon Repo
-        run: |
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global user.name "github-actions[bot]"
+      #- name: Update Config on HA-Addon Repo
+      #  run: |
+      #    git config --global user.email "github-actions[bot]@users.noreply.github.com"
+      #    git config --global user.name "github-actions[bot]"
 
-          git clone https://${{ secrets.CI }}@github.com/brunoccr/ha-addons.git
-          cd ha-addons
-          cd image-compressor
+      #    git clone https://${{ secrets.CI }}@github.com/brunoccr/ha-addons.git
+      #    cd ha-addons
+      #    cd image-compressor
 
-          jq '.version = "${{ github.event.release.tag_name }}"' config.json > tmp.json && mv tmp.json config.json
+      #    jq '.version = "${{ github.event.release.tag_name }}"' config.json > tmp.json && mv tmp.json config.json
 
-          git add config.json
-          git commit -m "Update version to ${{ github.event.release.tag_name }} on Image Compressor config"
-          git push
+      #    git add config.json
+      #    git commit -m "Update version to ${{ github.event.release.tag_name }} on Image Compressor config"
+      #    git push
