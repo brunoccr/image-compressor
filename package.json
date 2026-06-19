@@ -1,0 +1,17 @@
+{
+  "name": "image-compressor",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node --watch server.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@11.8.0",
+  "dependencies": {
+    "express": "^5.2.1",
+    "sharp": "^0.35.2"
+  }
+}
