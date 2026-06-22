@@ -5,8 +5,13 @@ RUN corepack enable
 ARG APP_VERSION
 ARG TARGETARCH
 WORKDIR /app
-
 ENV CI=true
+
+RUN apt-get update
+RUN apt-get install redis-server -y
+
+RUN npm i pm2 -g
+
 COPY . /app
 
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store \
@@ -16,4 +21,4 @@ ENV PORT=3000
 
 EXPOSE 3000
 
-CMD [ "node", "server.js" ]
+CMD [ "pm2-runtime", "start", "services.config.cjs" ]

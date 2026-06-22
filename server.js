@@ -1,9 +1,15 @@
-const express = require("express");
+import "dotenv/config";
+
+import express from "express";
+import sharp from "sharp";
+import beeQueue from "bee-queue";
 
 const app = express();
 
 app.use(express.json({ limit: "100mb" }));
 app.use(express.urlencoded({ limit: "100mb", extended: true }));
+
+const queue = new beeQueue("default");
 
 const port = process.env.PORT | 3000;
 
@@ -13,9 +19,7 @@ async function resizeToTargetFileSize(
   percentage = 90,
   quality = 90,
 ) {
-  const sharp = require("sharp");
-
-  const image = sharp(inputBuffer);
+  const image = sharp(inputBuffer).rotate();
 
   let outputBuffer = await image.jpeg({ quality }).toBuffer();
 
@@ -23,7 +27,7 @@ async function resizeToTargetFileSize(
     return outputBuffer;
   }
 
-  const metadata = await image.metadata();
+  const metadata = await sharp(outputBuffer).metadata();
 
   const targetWidth = Math.round(metadata.width * (percentage / 100));
   const targetHeight = Math.round(metadata.height * (percentage / 100));
@@ -45,20 +49,76 @@ async function resizeToTargetFileSize(
   );
 }
 
+async function uploadAttachment(appUrl, tableId, appId, appKey, imageBuffer) {
+  const form = new FormData();
+  form.append("file", new Blob([imageBuffer]), "Foto.jpg");
+
+  const optionsForUpload = {
+    method: "POST",
+    headers: {
+      "x-budibase-app-id": appId,
+      "x-budibase-api-key": appKey,
+    },
+    body: form,
+  };
+
+  return await (
+    await fetch(`${appUrl}/api/attachments/${tableId}/upload`, {
+      ...optionsForUpload,
+    })
+  ).json();
+}
+
+async function updateRecord(
+  appUrl,
+  tableId,
+  appId,
+  appKey,
+  recordId,
+  uploadedFile,
+) {
+  const optionsForUpdateRow = {
+    method: "PUT",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "x-budibase-app-id": appId,
+      "x-budibase-api-key": appKey,
+    },
+    body: JSON.stringify({
+      _id: recordId,
+      tableId: tableId,
+      type: "row",
+      Foto: uploadedFile[0],
+    }),
+  };
+
+  var updatedRow = await (
+    await fetch(`${appUrl}/api/public/v1/tables/${tableId}/rows/${recordId}`, {
+      ...optionsForUpdateRow,
+    })
+  ).json();
+
+  return updatedRow;
+}
+
 app.post("/compress", async (req, res) => {
-  const { filename, image_url } = req.body;
+  const { appKey, recordId, imageUrl } = req.body;
 
   try {
-    const response = await fetch(image_url);
-    const fileBlob = await (await response.blob()).arrayBuffer();
+    const job = queue.createJob({
+      appKey,
+      recordId,
+      imageUrl,
+    });
 
-    const halfMegabyte = 500 * 1024; //500kb
+    await job.save();
 
-    const bufferOut = await resizeToTargetFileSize(fileBlob, halfMegabyte);
+    console.log(`(${job.id}) Trabalho enfileirado.`);
 
     res.json({
       success: true,
-      data: bufferOut.toString("base64"),
+      jobId: job.id,
     });
   } catch (err) {
     console.error(err);
@@ -72,4 +132,55 @@ app.post("/compress", async (req, res) => {
 
 app.listen(port, () => {
   console.log(`Servidor rodando na porta: ${port}`);
+});
+
+queue.process(async function (job, done) {
+  console.log(`(${job.id}) Comprimindo a imagem...`);
+
+  try {
+    const appUrl = new URL(job.data.imageUrl).origin;
+    let appId = job.data.imageUrl.split("/")[6];
+    const tableId = `ta_${job.data.recordId.split("_")[2]}`;
+
+    if (process.env.DEVELOPMENT) {
+      appId = appId.replace("_", "_dev_");
+    }
+
+    const response = await fetch(job.data.imageUrl);
+    const fileBlob = await (await response.blob()).arrayBuffer();
+
+    const halfMegabyte = 500 * 1024; //500kb
+
+    const bufferOut = await resizeToTargetFileSize(fileBlob, halfMegabyte);
+
+    console.log(`(${job.id}) Upload do anexo...`);
+
+    var uploadedFile = await uploadAttachment(
+      appUrl,
+      tableId,
+      appId,
+      job.data.appKey,
+      bufferOut,
+    );
+
+    console.log(`(${job.id}) Atualizando o registro...`);
+
+    await updateRecord(
+      appUrl,
+      tableId,
+      appId,
+      job.data.appKey,
+      job.data.recordId,
+      uploadedFile,
+    );
+
+    console.log(`(${job.id}) Imagem comprimida com sucesso!`);
+  } catch (err) {
+    console.error(
+      `(${job.id}) Erro ao processar trabalho: `,
+      JSON.stringify(err),
+    );
+  }
+
+  return done();
 });
